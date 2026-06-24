@@ -12,4 +12,4 @@
 - Fix CPU compatibility issues in GraalVM about https://github.com/orbisgis/h2gis/issues/1473
 - Improve ST_CLIP to process complex polygon
 - Preserve the SRID when a “SELECT ST_GEOMFROMTEXT(''POINT(0 0)'', 4326) As the_geom” query is stored in an FGB table
-- Fix ST_SubDivide with empty geometry
+- Fix ST_SubDivide with empty geometry, improve performance

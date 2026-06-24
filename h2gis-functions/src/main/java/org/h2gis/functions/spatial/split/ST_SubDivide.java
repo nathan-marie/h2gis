@@ -7,11 +7,12 @@ import java.util.*;
 
 public class ST_SubDivide extends DeterministicScalarFunction {
 
-    static GeometryFactory FACTORY = new GeometryFactory();
+    static final GeometryFactory FACTORY = new GeometryFactory();
 
     public ST_SubDivide() {
         addProperty(PROP_REMARKS, "Divides geometry into parts using its internal envelope, " +
-                "until each part can be represented using no more than max_vertices.\n If no vertices apply a single recurve");
+                "until each part can be represented using no more than max_vertices.\n" +
+                "If no vertices apply a single recurse.");
     }
 
     @Override
@@ -20,95 +21,47 @@ public class ST_SubDivide extends DeterministicScalarFunction {
     }
 
     /**
-     * Divide the geometry into quadrants
-     *
-     * @param geom {@link Geometry}
-     * @return geometry
+     * Divide the geometry into quadrants (single pass, no vertex limit)
      */
     public static Geometry divide(Geometry geom) {
         return divideOnePass(geom);
     }
 
     /**
-     * @param geom {@link Geometry}
-     * @param maxvertices max number of vertices
-     * @return Geometry
+     * Divide the geometry recursively until each part has at most maxVertices.
      */
-    public static Geometry divide(Geometry geom, int maxvertices) {
-        if(geom ==null){
-            return null;
-        }
-        if(geom.isEmpty()){
-            return geom;
-        }
-        Geometry res = FACTORY.buildGeometry(subdivide_recursive(geom, maxvertices));
-        res.setSRID(geom.getSRID());
-        return res;
+    public static Geometry divide(Geometry geom, int maxVertices) {
+        if (geom == null || geom.isEmpty()) return geom;
+        List<Geometry> parts = subdivideRecursive(geom, Math.max(0, maxVertices));
+        if (parts == null || parts.isEmpty()) return geom.getFactory().createGeometryCollection();
+        Geometry result = FACTORY.buildGeometry(parts);
+        result.setSRID(geom.getSRID());
+        return result;
     }
 
+    // -------------------------------------------------------------------------
+    // Core recursive subdivision
+    // -------------------------------------------------------------------------
 
     /**
-     * Divide a geometry in quadrant recursively
-     *
-     * @param geom        input geometry
-     * @param maxvertices number of vertices in the final geometry
-     * @return geometry
+     * Recursively subdivides each sub-geometry of geom until no part exceeds maxVertices.
      */
-    public static List<Geometry> subdivide_recursive(Geometry geom, int maxvertices) {
-        if(geom ==null){
-            return null;
+    static List<Geometry> subdivideRecursive(Geometry geom, int maxVertices) {
+        if (geom == null || geom.isEmpty()) return Collections.emptyList();
+
+        Deque<Geometry> stack = new ArrayDeque<>();
+        // Seed the stack with non-empty sub-geometries
+        for (int i = 0; i < geom.getNumGeometries(); i++) {
+            Geometry sub = geom.getGeometryN(i);
+            if (!sub.isEmpty()) stack.push(sub);
         }
-        if (geom.isEmpty()){
-            return null;
-        }
-        maxvertices = Math.max(0, maxvertices);
-        Stack<Geometry> stack = new Stack<>();
-        int size = geom.getNumGeometries();
-        for (int i = 0; i < size; i++) {
-            Geometry subGeom = geom.getGeometryN(i);
-            if(!subGeom.isEmpty()) {
-                stack.add(subGeom);
-            }
-        }
+
         List<Geometry> results = new ArrayList<>();
         while (!stack.isEmpty()) {
-            final Geometry slice = stack.pop();
-            int nbPts = 0;
-            if (geom instanceof Polygon) {
-                nbPts = slice.getNumPoints() - 1;
-            } else if (geom instanceof LineString) {
-                nbPts = slice.getNumPoints();
-            }
-            if (nbPts > maxvertices) {
-                final Envelope envelope = slice.getEnvelopeInternal();
-                final double minX = envelope.getMinX();
-                final double maxX = envelope.getMaxX();
-                final double midX = minX + (maxX - minX) / 2.0;
-                final double minY = envelope.getMinY();
-                final double maxY = envelope.getMaxY();
-                final double midY = minY + (maxY - minY) / 2.0;
-                if(envelope.getHeight()==0){
-                    Envelope ulEnv = new Envelope(minX, midX, midY, maxY);
-                    Envelope urEnv = new Envelope(midX, maxX, midY, maxY);
-                    filterGeom(FACTORY.toGeometry(ulEnv).intersection(slice), maxvertices, stack, results);
-                    filterGeom(FACTORY.toGeometry(urEnv).intersection(slice), maxvertices, stack, results);
-                }
-                else if(envelope.getWidth()==0){
-                    Envelope llEnv = new Envelope(minX, midX, minY, midY);
-                    filterGeom(FACTORY.toGeometry(llEnv).intersection(slice), maxvertices, stack, results);
-                    Envelope lrEnv = new Envelope(midX, maxX, minY, midY);
-                    filterGeom(FACTORY.toGeometry(lrEnv).intersection(slice), maxvertices, stack, results);
-                }
-                else{
-                    Envelope ulEnv = new Envelope(minX, midX, midY, maxY);
-                    Envelope urEnv = new Envelope(midX, maxX, midY, maxY);
-                    Envelope llEnv = new Envelope(minX, midX, minY, midY);
-                    Envelope lrEnv = new Envelope(midX, maxX, minY, midY);
-                    filterGeom(FACTORY.toGeometry(ulEnv).intersection(slice), maxvertices, stack, results);
-                    filterGeom(FACTORY.toGeometry(urEnv).intersection(slice), maxvertices, stack, results);
-                    filterGeom(FACTORY.toGeometry(llEnv).intersection(slice), maxvertices, stack, results);
-                    filterGeom(FACTORY.toGeometry(lrEnv).intersection(slice), maxvertices, stack, results);
-                }
+            Geometry slice = stack.pop();
+            int nPts = vertexCount(slice);  // FIX: was using `geom` instead of `slice`
+            if (nPts > maxVertices) {
+                splitIntoQuadrants(slice, maxVertices, stack, results);
             } else {
                 results.add(slice);
             }
@@ -116,101 +69,126 @@ public class ST_SubDivide extends DeterministicScalarFunction {
         return results;
     }
 
-    /**
-     * Divide the geometry in quadrants
-     *
-     * @param geom input geometry
-     * @return geometry
-     */
+    // -------------------------------------------------------------------------
+    // Single-pass subdivision (no vertex limit)
+    // -------------------------------------------------------------------------
+
     private static Geometry divideOnePass(Geometry geom) {
-        if(geom ==null){
-            return null;
-        }
-        if(geom.isEmpty()){
-            return geom;
-        }
-        List<Geometry> results = new ArrayList();
-        int size = geom.getNumGeometries();
-        for (int i = 0; i < size; i++) {
-            Geometry subGeom = geom.getGeometryN(i);
-            if (!subGeom.isEmpty() && (subGeom instanceof Polygon || subGeom instanceof LineString)) {
-                final Envelope envelope = subGeom.getEnvelopeInternal();
-                double minX = envelope.getMinX();
-                double maxX = envelope.getMaxX();
-                double midX = minX + (maxX - minX) / 2.0;
-                double minY = envelope.getMinY();
-                double maxY = envelope.getMaxY();
-                double midY = minY + (maxY - minY) / 2.0;
-                if(envelope.getHeight()==0){
-                    Envelope ulEnv = new Envelope(minX, midX, midY, maxY);
-                    Envelope urEnv = new Envelope(midX, maxX, midY, maxY);
-                    Geometry ul = FACTORY.toGeometry(ulEnv).intersection(subGeom);
-                    Geometry ur = FACTORY.toGeometry(urEnv).intersection(subGeom);
-                    results.add(ul);
-                    results.add(ur);
-                }
-                else if(envelope.getWidth()==0){
-                    Envelope llEnv = new Envelope(minX, midX, minY, midY);
-                    Geometry ll = FACTORY.toGeometry(llEnv).intersection(subGeom);
-                    Envelope lrEnv = new Envelope(midX, maxX, minY, midY);
-                    Geometry lr = FACTORY.toGeometry(lrEnv).intersection(subGeom);
-                    results.add(ll);
-                    results.add(lr);
-                } else{
-                    Envelope ulEnv = new Envelope(minX, midX, midY, maxY);
-                    Envelope urEnv = new Envelope(midX, maxX, midY, maxY);
-                    Geometry ul = FACTORY.toGeometry(ulEnv).intersection(subGeom);
-                    Geometry ur = FACTORY.toGeometry(urEnv).intersection(subGeom);
-                    results.add(ul);
-                    results.add(ur);
-                    Envelope llEnv = new Envelope(minX, midX, minY, midY);
-                    Geometry ll = FACTORY.toGeometry(llEnv).intersection(subGeom);
-                    Envelope lrEnv = new Envelope(midX, maxX, minY, midY);
-                    Geometry lr = FACTORY.toGeometry(lrEnv).intersection(subGeom);
-                    results.add(ll);
-                    results.add(lr);
-                }
-            } else {
-                results.add(subGeom);
+        if (geom == null || geom.isEmpty()) return geom;
+
+        List<Geometry> results = new ArrayList<>();
+        for (int i = 0; i < geom.getNumGeometries(); i++) {
+            Geometry sub = geom.getGeometryN(i);
+            if (!sub.isEmpty() && (sub instanceof Polygon || sub instanceof LineString)) {
+                quadrantIntersections(sub, results);
+            } else if (!sub.isEmpty()) {
+                results.add(sub);
             }
+            // empty sub-geometries are silently dropped
         }
+
         Geometry res = FACTORY.buildGeometry(results);
         res.setSRID(geom.getSRID());
         return res;
     }
 
+    // -------------------------------------------------------------------------
+    // Shared geometry helpers
+    // -------------------------------------------------------------------------
 
     /**
-     * Extract unique geometry and check if the geometry must be divided
-     *
-     * @param geom {@link Geometry}
-     * @param maxvertices max vertices
-     * @param stack queue
-     * @param ret list of sub geometries
+     * Returns the vertex count relevant for subdivision:
+     *   - Polygon:    numPoints - 1  (closing point not counted)
+     *   - LineString: numPoints
+     *   - Other:      0              (never subdivided)
      */
-    public static void filterGeom(Geometry geom, int maxvertices, Stack stack, List ret) {
-        int size = geom.getNumGeometries();
-        for (int i = 0; i < size; i++) {
-            Geometry subGeom = geom.getGeometryN(i);
-            int nbPts = 0;
-            if (subGeom.getDimension()==2) {
-                nbPts = subGeom.getNumPoints() - 1;
-                if (nbPts <= maxvertices) {
-                    ret.add(subGeom);
-                } else {
-                    stack.add(subGeom);
-                }
-            } else if (subGeom.getDimension()==1) {
-                nbPts = subGeom.getNumPoints();
-                if (nbPts <= maxvertices) {
-                    ret.add(subGeom);
-                } else {
-                    stack.add(subGeom);
-                }
-            } else {
-                ret.add(subGeom);
-            }
+    private static int vertexCount(Geometry g) {
+        if (g instanceof Polygon)    return g.getNumPoints() - 1;
+        if (g instanceof LineString) return g.getNumPoints();
+        return 0;
+    }
+
+    /**
+     * Splits a geometry into 2 or 4 quadrant intersections and routes each
+     * result back to the stack (if too large) or to results (if small enough).
+     */
+    private static void splitIntoQuadrants(Geometry slice, int maxVertices,
+                                           Deque<Geometry> stack, List<Geometry> results) {
+        Envelope env = slice.getEnvelopeInternal();
+        double minX = env.getMinX(), maxX = env.getMaxX(), midX = minX + (maxX - minX) / 2.0;
+        double minY = env.getMinY(), maxY = env.getMaxY(), midY = minY + (maxY - minY) / 2.0;
+
+        List<Envelope> quadrants;
+        if (env.getHeight() == 0) {
+            // Horizontal line: split left/right only
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, midY, maxY),
+                    new Envelope(midX, maxX, midY, maxY));
+        } else if (env.getWidth() == 0) {
+            // Vertical line: split top/bottom only
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, minY, midY),
+                    new Envelope(midX, maxX, minY, midY));
+        } else {
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, midY, maxY),
+                    new Envelope(midX, maxX, midY, maxY),
+                    new Envelope(minX, midX, minY, midY),
+                    new Envelope(midX, maxX, minY, midY));
+        }
+
+        for (Envelope q : quadrants) {
+            filterGeom(FACTORY.toGeometry(q).intersection(slice), maxVertices, stack, results);
         }
     }
 
+    /**
+     * Same quadrant logic for the single-pass variant (no size check).
+     */
+    private static void quadrantIntersections(Geometry slice, List<Geometry> results) {
+        Envelope env = slice.getEnvelopeInternal();
+        double minX = env.getMinX(), maxX = env.getMaxX(), midX = minX + (maxX - minX) / 2.0;
+        double minY = env.getMinY(), maxY = env.getMaxY(), midY = minY + (maxY - minY) / 2.0;
+
+        List<Envelope> quadrants;
+        if (env.getHeight() == 0) {
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, midY, maxY),
+                    new Envelope(midX, maxX, midY, maxY));
+        } else if (env.getWidth() == 0) {
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, minY, midY),
+                    new Envelope(midX, maxX, minY, midY));
+        } else {
+            quadrants = Arrays.asList(
+                    new Envelope(minX, midX, midY, maxY),
+                    new Envelope(midX, maxX, midY, maxY),
+                    new Envelope(minX, midX, minY, midY),
+                    new Envelope(midX, maxX, minY, midY));
+        }
+
+        for (Envelope q : quadrants) {
+            Geometry inter = FACTORY.toGeometry(q).intersection(slice);
+            if (!inter.isEmpty()) results.add(inter);
+        }
+    }
+
+    /**
+     * Dispatches each sub-geometry of a result back to the stack or results list.
+     * Empty geometries and dimension-0 (point) results are discarded.
+     */
+    static void filterGeom(Geometry geom, int maxVertices,
+                           Deque<Geometry> stack, List<Geometry> results) {
+        for (int i = 0; i < geom.getNumGeometries(); i++) {
+            Geometry sub = geom.getGeometryN(i);
+            if (sub.isEmpty()) continue;  // FIX: drop empty sub-geometries
+            int dim = sub.getDimension();
+            if (dim == 2 || dim == 1) {
+                int nPts = vertexCount(sub);
+                if (nPts <= maxVertices) results.add(sub);
+                else stack.push(sub);
+            }
+            // dim == 0 (points) silently dropped — cannot be subdivided
+        }
+    }
 }

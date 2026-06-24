@@ -1230,7 +1230,7 @@ public class SpatialFunction2Test {
         Geometry geom = wktReader.read("MULTIPOLYGON (EMPTY, \n" +
                 "  ((210 140, 280 140, 280 100, 210 100, 210 140)))");
         Geometry res =  ST_SubDivide.divide(geom);
-        assertEquals(5, res.getNumGeometries());
+        assertEquals(4, res.getNumGeometries());
     }
 
     @Test
