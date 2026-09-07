@@ -41,6 +41,7 @@ import java.nio.file.Files;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.h2gis.utilities.FileUtilities;
@@ -129,14 +130,14 @@ public class DBFDriverFunction implements DriverFunction {
                 JDBCUtilities.attachCancelResultSet(st, progress);
                 ProgressVisitor lineProgress = null;
                 if (!(progress instanceof EmptyProgressVisitor)) {
-                    try (ResultSet rs = st.executeQuery(String.format("select count(*) from %s", outputTable))) {
+                    try (ResultSet rs = st.executeQuery(String.format(Locale.ROOT, "select count(*) from %s", outputTable))) {
                         if (rs.next()) {
                             lineProgress = progress.subProcess(rs.getInt(1));
                         }
                     }
                 }
                 try {
-                    try (ResultSet rs = st.executeQuery(String.format("select * from %s", outputTable))) {
+                    try (ResultSet rs = st.executeQuery(String.format(Locale.ROOT, "select * from %s", outputTable))) {
                         ResultSetMetaData resultSetMetaData = rs.getMetaData();
                         ArrayList<Integer> columnIndexes = new ArrayList<Integer>();
                         DbaseFileHeader header = dBaseHeaderFromMetaData(resultSetMetaData, columnIndexes);
@@ -244,14 +245,14 @@ public class DBFDriverFunction implements DriverFunction {
                         List<Column> otherCols = new ArrayList<>(dbfHeader.getNumFields() + 1);
                         String types = getSQLColumnTypes(dbfHeader, DBUtils.getDBType(connection), otherCols);
                         String pkColName = FileEngine.getUniqueColumnName(H2TableIndex.PK_COLUMN_NAME, otherCols);
-                        st.execute(String.format("CREATE TABLE %s (" + pkColName + " INT PRIMARY KEY, %s)", outputTable,
+                        st.execute(String.format(Locale.ROOT, "CREATE TABLE %s (" + pkColName + " INT PRIMARY KEY, %s)", outputTable,
                                 types));
                     }
                     try {
                         connection.setAutoCommit(false);
                         int columnCount = dbfDriver.getFieldCount();
                         try (PreparedStatement preparedStatement = connection.prepareStatement(
-                                String.format("INSERT INTO %s VALUES ( %s )", outputTable,
+                                String.format(Locale.ROOT, "INSERT INTO %s VALUES ( %s )", outputTable,
                                         getQuestionMark(dbfHeader.getNumFields() + 1)))) {
                             JDBCUtilities.attachCancelResultSet(preparedStatement, progress);
                             long batchSize = 0;

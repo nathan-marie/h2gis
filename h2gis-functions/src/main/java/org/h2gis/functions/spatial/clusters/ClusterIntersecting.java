@@ -93,7 +93,7 @@ public class ClusterIntersecting extends AbstractCluster {
             parent[i] = i;
         }
 
-        String pairSql = String.format(
+        String pairSql = String.format(Locale.ROOT,
                 "SELECT a.%s, b.%s " +
                         "FROM %s a, %s b " +
                         "WHERE a.%s < b.%s " +

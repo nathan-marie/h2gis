@@ -34,6 +34,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Locale;
 
 import static org.h2gis.unitTest.GeometryAsserts.assertGeometryEquals;
 import static org.junit.jupiter.api.Assertions.*;
@@ -359,7 +360,8 @@ public class SHPEngineTest {
         String tableName = tableLocation.getTable();
         String fieldName = TableLocation.capsIdentifier(geometryColumnName, DBTypes.H2GIS);
 
-        String query  = String.format("SELECT I.INDEX_TYPE_NAME, I.INDEX_CLASS FROM INFORMATION_SCHEMA.INDEXES AS I , " +
+        String query  = String.format(Locale.ROOT, 
+                        "SELECT I.INDEX_TYPE_NAME, I.INDEX_CLASS FROM INFORMATION_SCHEMA.INDEXES AS I , " +
                         "(SELECT COLUMN_NAME, TABLE_NAME, TABLE_SCHEMA  FROM " +
                         "INFORMATION_SCHEMA.INDEX_COLUMNS WHERE TABLE_SCHEMA='%s' and TABLE_NAME='%s' AND COLUMN_NAME='%s') AS C " +
                         "WHERE I.TABLE_SCHEMA=C.TABLE_SCHEMA AND I.TABLE_NAME=C.TABLE_NAME and C.COLUMN_NAME='%s'"

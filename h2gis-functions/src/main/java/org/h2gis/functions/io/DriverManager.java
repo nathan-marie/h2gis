@@ -38,6 +38,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
+import java.util.Locale;
 
 /**
  * Manage additional table engines in H2.
@@ -97,7 +98,8 @@ public class DriverManager extends AbstractFunction implements ScalarFunction, D
             if(driverDef.getFileExt().equalsIgnoreCase(ext)) {
                 try (Statement st = connection.createStatement()) {
                     String tableName_ = TableLocation.parse(tableName, dbType).toString();
-                    st.execute(String.format("CREATE TABLE %s COMMENT %s ENGINE %s WITH %s",
+                    st.execute(String.format(Locale.ROOT,
+                            "CREATE TABLE %s COMMENT %s ENGINE %s WITH %s",
                             tableName_,StringUtils.quoteStringSQL(fileName),
                             StringUtils.quoteJavaString(driverDef.getClassName()),StringUtils.quoteJavaString(fileName)));
                      return new String[]{tableName_};

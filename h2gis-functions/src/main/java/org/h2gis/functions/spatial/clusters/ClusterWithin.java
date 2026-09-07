@@ -97,7 +97,7 @@ public class ClusterWithin extends AbstractCluster {
         for (int i = 0; i < n; i++) {
             parent[i] = i;
         }
-        String pairSql = String.format(
+        String pairSql = String.format(Locale.ROOT,
                 "SELECT a.%s, b.%s " +
                         "FROM %s a, %s b " +
                         "WHERE a.%s < b.%s " +
